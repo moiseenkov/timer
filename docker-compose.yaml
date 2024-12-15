@@ -1,0 +1,140 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres
+    hostname: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_HOST_AUTH_METHOD: password
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - .data/postgres/:/var/lib/postgresql/data
+    networks:
+      - timer-network
+    ports:
+      - "5432:5432"
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    hostname: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - timer-network
+    volumes:
+      - .data/rabbitmq/:/var/lib/rabbitmq
+    depends_on:
+      - postgres
+
+  webserver:
+    build:
+      context: .
+      dockerfile: webserver/Dockerfile
+    environment:
+      RABBIT_MQ_HOST: "rabbitmq"
+      RABBIT_MQ_PORT: 5672
+      RABBIT_MQ_INCOMING: "incoming_timers"
+      POSTGRES_HOST: "postgres"
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: "postgres"
+      POSTGRES_PASSWORD: "postgres"
+      POSTGRES_DB: "postgres"
+    ports:
+      - "8000-8001:8000"
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: on-failure
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      timer-network:
+        aliases:
+          - webserver-1
+          - webserver-2
+    depends_on:
+      - rabbitmq
+
+  lb-webserver:
+    build: load-balancers/webserver
+    container_name: load-balancer-webserver
+    ports:
+      - "80:80"
+    networks:
+      - timer-network
+    depends_on:
+      - webserver
+
+  consumer:
+    build:
+      context: .
+      dockerfile: consumer/Dockerfile
+    environment:
+      RABBIT_MQ_HOST: "rabbitmq"
+      RABBIT_MQ_PORT: 5672
+      RABBIT_MQ_INCOMING: "incoming_timers"
+      RABBIT_MQ_TO_FIRE: "timers_to_fire"
+      RABBIT_MQ_RECONNECTING_INTERVAL: 10
+      POSTGRES_HOST: "postgres"
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: "postgres"
+      POSTGRES_PASSWORD: "postgres"
+      POSTGRES_DB: "postgres"
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: on-failure
+    networks:
+      - timer-network
+    depends_on:
+      - rabbitmq
+      - postgres
+
+  timer:
+    build:
+      context: .
+      dockerfile: timer/Dockerfile
+    environment:
+      RABBIT_MQ_HOST: "rabbitmq"
+      RABBIT_MQ_PORT: 5672
+      RABBIT_MQ_TO_FIRE: "timers_to_fire"
+      RABBIT_MQ_RECONNECTING_INTERVAL: 5
+      POSTGRES_HOST: "postgres"
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: "postgres"
+      POSTGRES_PASSWORD: "postgres"
+      POSTGRES_DB: "postgres"
+    networks:
+      - timer-network
+    depends_on:
+      - rabbitmq
+      - postgres
+
+  trigger:
+    build:
+      context: .
+      dockerfile: trigger/Dockerfile
+    environment:
+      RABBIT_MQ_HOST: "rabbitmq"
+      RABBIT_MQ_PORT: 5672
+      RABBIT_MQ_TO_FIRE: "timers_to_fire"
+      RABBIT_MQ_RECONNECTING_INTERVAL: 5
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: on-failure
+    networks:
+      - timer-network
+    depends_on:
+      - rabbitmq
+
+networks:
+  timer-network:
