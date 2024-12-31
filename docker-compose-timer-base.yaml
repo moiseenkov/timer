@@ -1,0 +1,16 @@
+services:
+  timer:
+    build:
+      context: .
+      dockerfile: timer/Dockerfile
+    environment:
+      RABBIT_MQ_HOST: "rabbitmq"
+      RABBIT_MQ_PORT: 5672
+      RABBIT_MQ_TO_FIRE: "timers_to_fire"
+      RABBIT_MQ_RECONNECTING_INTERVAL: 5
+      TIMER_DB_PORT: 5432
+      TIMER_DB_USER: "postgres"
+      TIMER_DB_PASSWORD: "postgres"
+      TIMER_DB_DB: "postgres"
+    networks:
+      - timer-network

@@ -63,37 +63,52 @@ between other microservices.
      - Ports:
        - `5672` for communication with other microservices
        - `15672` for accessing RabbitMQ UI (login: `guest`, password: `guest`)
-4. **consumer** is a scalable microservices responsible for pulling messages from the `rabbitmq`'s queue 
-`incoming_timers` and saving them into a database into two tables: `timers` and `timers_to_fire`. The first table 
-`timers` contains all original data about the timer. The second table `timers_to_fire` contains only timers that haven't
-been fired yet. Once the moment comes they will be removed from this table by the `timer` microservice. At this point
-the `consumer` is the only microservice that writes data to database. And all concurrent instances are not conflicting
-because by consuming different messages from `rabbitmq` they will always add different rows to tables.
+4. **postgres** is a PostgreSQL instance which hosts a single table `timers`. This table contains all original data 
+about timers, and it's used by webserver only for read requests, thus it can be replicated in order to provide higher 
+performance and fault-tolerance.
    - Other details:
-     - Location in the project: `consumer`
-     - Source image: custom from `consumer/Dockerfile`
-     - Container name: `consumer-1`, `consumer-2`, ...
+     - Location in the project: -
+     - Source image: `postgres`
+     - Container name: `postgres`
      - URL: -
      - Ports: -
-5. **postgres** is a PostgreSQL instance
-   - Location in the project: -
-   - Source image: `postgres`
-   - Container name: `timer-postgres-1`
+     - User: postgres
+     - Password: postgres
+     - Database name: postgres
+5. **timer-db** is a scalable PostgreSQL services, each instance of which hosts a single table `timers_to_fire`.
+In contrast with the `postgres` service, `timer-db` instances store only timers that should be triggered in the future.
+The `timer-db-N` instance receives INSERT requests from the `consumer-N` service, and SELECT/DELETE requests from the
+`timer-N` service. At this point there are no two process that would read and delete the same row in the table, and thus
+it is conflict safe.
+    - Other details:
+     - Location in the project: -
+     - Source image: `postgres`
+     - Container name: `timer-db-1`, `timer-db-2`, ...
+     - URL: -
+     - Ports: -
+     - User: postgres
+     - Password: postgres
+     - Database name: postgres
+6. **consumer** is a scalable microservices responsible for pulling messages from the `rabbitmq`'s queue 
+`incoming_timers` and saving them into databases:
+ - (1) the `postgres` service (table `timers`),
+ - (2) the `timer-db` service (table `timers_to_fire`)
+ - Other details:
+   - Location in the project: `consumer`
+   - Source image: custom from `consumer/Dockerfile`
+   - Container name: `consumer-1`, `consumer-2`, ...
    - URL: -
-   - Ports: 5432
-   - User: postgres
-   - Password: postgres
-   - Database name: postgres
-6. **timer** is a single instance microservice which makes periodic requests to `postgres`'s table `timers_to_fire` and
+   - Ports: -
+7. **timer** is a scalable microservice which makes periodic requests to `timer-db`'s table `timers_to_fire` and
 if there are items that reached their waiting time, it (1) sends message to `rabbitmq`'s queue `timers_to_fire`, and (2)
 removes these items from the database, so they'd never be triggered twice.
    - Other details:
    - Location in the project: `timer`
    - Source image: custom from `timer/Dockerfile`
-   - Container name: `timer`
+   - Container name: `timer-1`, `timer-2`, ...
    - URL: -
    - Ports: -
-7. **trigger** is a scalable microservice each instance of each waits for messages coming from the `rabbitmq`'s queue 
+8. **trigger** is a scalable microservice each instance of each waits for messages coming from the `rabbitmq`'s queue 
 `timerf_to_fire` and once received, makes POST requests to the URL from the message.
 
 ## Data workflow
@@ -112,11 +127,12 @@ algorithm.
 3. `webserver` instance validates the request body. If errors, then returns response with HTTP 422 status code and an
 error message. If validation is successful, generates UUID, packs data into a message and sends it to the `rabbitmq` 
 microservice to the queue `incoming_timers`.
-4. Any instance of `consumer` microservice receives this message and saves data to `postgres` to tables:
+4. Any instance of `consumer` microservice receives this message and saves data to the `postgres` to the table `timers`
+and to the `timder-db-N` to the table `timers_to_fire`:
 ![tables](pics/tables.png)
-5. The `timer` microservice constantly requests the `timers_to_fire` table in order to detect items that reached their firing
-moment. If such items detected, the `timer` (1) packs them into a message, (2) sends the message to `rabbitmq` (queue
-`timers_to_fire`) and removes item from the database.
+5. The `timer` microservice constantly requests the `timers_to_fire` table in order to detect items that reached their 
+firing moment. If such items detected, the `timer` (1) packs them into a message, (2) sends the message to `rabbitmq`
+(queue `timers_to_fire`) and removes item from the database.
 6. Any instance of `trigger` microservice receives the message from the queue `timers_to_fire` and makes request `POST 
 {url}` with a body:
 ```json

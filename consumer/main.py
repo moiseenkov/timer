@@ -28,11 +28,18 @@ RABBIT_MQ_HOST = os.environ.get("RABBIT_MQ_HOST", "rabbitmq")
 RABBIT_MQ_PORT = int(os.environ.get("RABBIT_MQ_PORT", "5672"))
 RABBIT_MQ_INCOMING = os.environ.get("RABBIT_MQ_INCOMING", "unknown_incoming")
 RABBIT_MQ_RECONNECTING_INTERVAL = int(os.environ.get("RABBIT_MQ_RECONNECTING_INTERVAL", "2"))
+
 POSTGRES_HOST = os.environ.get("POSTGRES_HOST", "postgres")
 POSTGRES_PORT = int(os.environ.get("POSTGRES_PORT", "5432"))
 POSTGRES_USER = os.environ.get("POSTGRES_USER", "postgres")
 POSTGRES_PASSWORD =os.environ.get("POSTGRES_PASSWORD", "postgres")
 POSTGRES_DB = os.environ.get("POSTGRES_DB", "postgres")
+
+TIMER_DB_HOST = os.environ.get("TIMER_DB_HOST", "postgres")
+TIMER_DB_PORT = int(os.environ.get("TIMER_DB_PORT", "5432"))
+TIMER_DB_USER = os.environ.get("TIMER_DB_USER", "postgres")
+TIMER_DB_PASSWORD =os.environ.get("TIMER_DB_PASSWORD", "postgres")
+TIMER_DB_DB = os.environ.get("TIMER_DB_DB", "postgres")
 
 
 SQL_CREATE_TIMERS_TABLE = """
@@ -67,39 +74,57 @@ logger = logging.getLogger(__name__)
 
 
 def consume_messages():
-    def callback(ch, method, properties, body):
-        """Callback for saving incoming messages to database."""
-        payload = json.loads(body.decode())
-        db_client = PostgresClient(
-            host=POSTGRES_HOST,
-            port=POSTGRES_PORT,
-            database=POSTGRES_DB,
-            user=POSTGRES_USER,
-            password=POSTGRES_PASSWORD
-        )
+    def run_queries(db_client: PostgresClient, queries: list[str]) -> None:
         while True:
             logger.info("Attempting to save message to database")
             try:
-                db_client.run_queries([
-                    SQL_CREATE_TIMERS_TABLE,
-                    SQL_INSERT_TIMER.format(
-                        payload["id"],
-                        payload["hours"],
-                        payload["minutes"],
-                        payload["seconds"],
-                        payload["url"],
-                        payload["created_at"],
-                        payload["fire_at"]
-                    ),
-                    SQL_CREATE_TIMERS_TO_FIRE_TABLE,
-                    SQL_INSERT_TIMER_TO_FIRE.format(payload["id"], payload["fire_at"], payload["url"]),
-                ])
+                db_client.run_queries(queries)
             except PostgresClientException as ex:
-                logger.error("Error occurred while saving message to database: {}. Retry in 1 sec...".format(ex))
+                logger.error("Error occurred while saving message to database: %s. Retry in 1 sec...", str(ex))
                 sleep(1)
                 continue
             else:
                 return
+
+    def callback(ch, method, properties, body):
+        """Callback for saving incoming messages to database."""
+        payload = json.loads(body.decode())
+        postgres_client = PostgresClient(
+            host=POSTGRES_HOST,
+            port=POSTGRES_PORT,
+            database=POSTGRES_DB,
+            user=POSTGRES_USER,
+            password=POSTGRES_PASSWORD,
+        )
+        run_queries(
+            db_client=postgres_client,
+            queries=[
+                SQL_CREATE_TIMERS_TABLE,
+                SQL_INSERT_TIMER.format(
+                    payload["id"],
+                    payload["hours"],
+                    payload["minutes"],
+                    payload["seconds"],
+                    payload["url"],
+                    payload["created_at"],
+                    payload["fire_at"]
+                )
+            ]
+        )
+        timer_db_client = PostgresClient(
+            host=TIMER_DB_HOST,
+            port=TIMER_DB_PORT,
+            database=TIMER_DB_DB,
+            user=TIMER_DB_USER,
+            password=TIMER_DB_PASSWORD,
+        )
+        run_queries(
+            db_client=timer_db_client,
+            queries=[
+                SQL_CREATE_TIMERS_TO_FIRE_TABLE,
+                SQL_INSERT_TIMER_TO_FIRE.format(payload["id"], payload["fire_at"], payload["url"]),
+            ]
+        )
 
     while True:
         queue_client = RabbitMQClient(host=RABBIT_MQ_HOST, port=RABBIT_MQ_PORT)

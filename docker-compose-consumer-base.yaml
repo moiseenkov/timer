@@ -1,0 +1,26 @@
+services:
+  consumer:
+    build:
+      context: .
+      dockerfile: consumer/Dockerfile
+    environment:
+      RABBIT_MQ_HOST: "rabbitmq"
+      RABBIT_MQ_PORT: 5672
+      RABBIT_MQ_INCOMING: "incoming_timers"
+      RABBIT_MQ_TO_FIRE: "timers_to_fire"
+      RABBIT_MQ_RECONNECTING_INTERVAL: 10
+      POSTGRES_HOST: "postgres"
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: "postgres"
+      POSTGRES_PASSWORD: "postgres"
+      POSTGRES_DB: "postgres"
+      TIMER_DB_HOST: timer-db
+      TIMER_DB_PORT: 5432
+      TIMER_DB_USER: "postgres"
+      TIMER_DB_PASSWORD: "postgres"
+      TIMER_DB_DB: "postgres"
+    deploy:
+      restart_policy:
+        condition: on-failure
+    networks:
+      - timer-network

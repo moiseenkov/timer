@@ -24,11 +24,11 @@ RABBIT_MQ_HOST = os.environ.get("RABBIT_MQ_HOST", "rabbitmq")
 RABBIT_MQ_PORT = int(os.environ.get("RABBIT_MQ_PORT", "5672"))
 RABBIT_MQ_TO_FIRE = os.environ.get("RABBIT_MQ_TO_FIRE", "timers_to_fire")
 RABBIT_MQ_RECONNECTING_INTERVAL = int(os.environ.get("RABBIT_MQ_RECONNECTING_INTERVAL", "2"))
-POSTGRES_HOST = os.environ.get("POSTGRES_HOST", "postgres")
-POSTGRES_PORT = int(os.environ.get("POSTGRES_PORT", "5432"))
-POSTGRES_USER = os.environ.get("POSTGRES_USER", "postgres")
-POSTGRES_PASSWORD =os.environ.get("POSTGRES_PASSWORD", "postgres")
-POSTGRES_DB = os.environ.get("POSTGRES_DB", "postgres")
+TIMER_DB_HOST = os.environ.get("TIMER_DB_HOST", "postgres")
+TIMER_DB_PORT = int(os.environ.get("TIMER_DB_PORT", "5432"))
+TIMER_DB_USER = os.environ.get("TIMER_DB_USER", "postgres")
+TIMER_DB_PASSWORD =os.environ.get("TIMER_DB_PASSWORD", "postgres")
+TIMER_DB_DB = os.environ.get("TIMER_DB_DB", "postgres")
 
 SQL_CREATE_TIMERS_TO_FIRE_TABLE = """
 CREATE TABLE IF NOT EXISTS timers_to_fire (
@@ -72,11 +72,11 @@ def select_timers_to_fire(db_client: PostgresClient) -> list[Any]:
 def schedule_hooks_firing():
     """Callback for saving incoming messages to database."""
     db_client = PostgresClient(
-        host=POSTGRES_HOST,
-        port=POSTGRES_PORT,
-        database=POSTGRES_DB,
-        user=POSTGRES_USER,
-        password=POSTGRES_PASSWORD
+        host=TIMER_DB_HOST,
+        port=TIMER_DB_PORT,
+        database=TIMER_DB_DB,
+        user=TIMER_DB_USER,
+        password=TIMER_DB_PASSWORD
     )
     rabbitmq_client = RabbitMQClient(host=RABBIT_MQ_HOST, port=RABBIT_MQ_PORT)
     while True:
