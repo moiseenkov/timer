@@ -1,35 +1,11 @@
-version: '3.8'
-
 services:
   postgres:
-    image: postgres
-    hostname: postgres
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: postgres
-      POSTGRES_HOST_AUTH_METHOD: password
-      PGDATA: /var/lib/postgresql/data/pgdata
+    extends:
+      file: docker-compose-postgres-base.yaml
+      service: postgres-base
+    container_name: postgres
     volumes:
       - .data/postgres/:/var/lib/postgresql/data
-    networks:
-      - timer-network
-    ports:
-      - "5432:5432"
-
-  rabbitmq:
-    image: rabbitmq:3-management
-    container_name: rabbitmq
-    hostname: rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    networks:
-      - timer-network
-    volumes:
-      - .data/rabbitmq/:/var/lib/rabbitmq
-    depends_on:
-      - postgres
 
   webserver:
     build:
@@ -73,50 +49,79 @@ services:
     depends_on:
       - webserver
 
-  consumer:
-    build:
-      context: .
-      dockerfile: consumer/Dockerfile
-    environment:
-      RABBIT_MQ_HOST: "rabbitmq"
-      RABBIT_MQ_PORT: 5672
-      RABBIT_MQ_INCOMING: "incoming_timers"
-      RABBIT_MQ_TO_FIRE: "timers_to_fire"
-      RABBIT_MQ_RECONNECTING_INTERVAL: 10
-      POSTGRES_HOST: "postgres"
-      POSTGRES_PORT: 5432
-      POSTGRES_USER: "postgres"
-      POSTGRES_PASSWORD: "postgres"
-      POSTGRES_DB: "postgres"
-    deploy:
-      replicas: 2
-      restart_policy:
-        condition: on-failure
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    hostname: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
     networks:
       - timer-network
-    depends_on:
-      - rabbitmq
-      - postgres
+    volumes:
+      - .data/rabbitmq/:/var/lib/rabbitmq
 
-  timer:
-    build:
-      context: .
-      dockerfile: timer/Dockerfile
+  timer-db-1:
+    extends:
+      file: docker-compose-postgres-base.yaml
+      service: postgres-base
+    container_name: timer-db-1
+    volumes:
+      - .data/timer-db-1/:/var/lib/postgresql/data
+
+  timer-db-2:
+    extends:
+      file: docker-compose-postgres-base.yaml
+      service: postgres-base
+    container_name: timer-db-2
+    volumes:
+      - .data/timer-db-2/:/var/lib/postgresql/data
+
+  consumer-1:
+    extends:
+      file: docker-compose-consumer-base.yaml
+      service: consumer
+    container_name: consumer-1
     environment:
-      RABBIT_MQ_HOST: "rabbitmq"
-      RABBIT_MQ_PORT: 5672
-      RABBIT_MQ_TO_FIRE: "timers_to_fire"
-      RABBIT_MQ_RECONNECTING_INTERVAL: 5
-      POSTGRES_HOST: "postgres"
-      POSTGRES_PORT: 5432
-      POSTGRES_USER: "postgres"
-      POSTGRES_PASSWORD: "postgres"
-      POSTGRES_DB: "postgres"
-    networks:
-      - timer-network
+      TIMER_DB_HOST: timer-db-1
     depends_on:
-      - rabbitmq
       - postgres
+      - timer-db-1
+      - rabbitmq
+
+  consumer-2:
+    extends:
+      file: docker-compose-consumer-base.yaml
+      service: consumer
+    container_name: consumer-2
+    environment:
+      TIMER_DB_HOST: timer-db-2
+    depends_on:
+      - postgres
+      - timer-db-2
+      - rabbitmq
+
+  timer-1:
+    extends:
+      file: docker-compose-timer-base.yaml
+      service: timer
+    container_name: timer-1
+    environment:
+      TIMER_DB_HOST: "timer-db-1"
+    depends_on:
+      - timer-db-1
+      - rabbitmq
+
+  timer-2:
+    extends:
+      file: docker-compose-timer-base.yaml
+      service: timer
+    container_name: timer-2
+    environment:
+      TIMER_DB_HOST: "timer-db-2"
+    depends_on:
+      - timer-db-2
+      - rabbitmq
 
   trigger:
     build:

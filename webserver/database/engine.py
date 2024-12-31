@@ -36,7 +36,6 @@ postgres_url = "postgresql://{user}:{password}@{host}:{port}/{db}".format(
 )
 engine = create_engine(postgres_url, echo=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-# Base.metadata.create_all(bind=engine)
 
 
 def get_session():
